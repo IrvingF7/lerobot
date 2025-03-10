@@ -169,7 +169,7 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
         super().__init__(config=config)
         self.config = config
         if config.paligemma_pretrained_path is not None:
-            self.paligemma = AutoModel(config.paligemma_pretrained_path)
+            self.paligemma = PaliGemmaForConditionalGeneration.from_pretrained(config.paligemma_pretrained_path)
         else:
             self.paligemma = PaliGemmaForConditionalGeneration(config=config.paligemma_config)
         self.gemma_expert = GemmaForCausalLM(config=config.gemma_expert_config)
@@ -395,6 +395,12 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
 
         att_weights = torch.matmul(query_states, key_states.transpose(2, 3))
         att_weights *= head_dim**-0.5
+        
+        # # Irving: Soft capping
+        # att_weights = att_weights / 50.0 # attn_softclamp default in gemma 2
+        # att_weights = torch.tanh(att_weights)
+        # att_weights = att_weights * 50.0
+
         big_neg = -2.3819763e38  # See gemma/modules.py
 
         masked_att_weights = torch.where(attention_mask[:, None, :, :], att_weights, big_neg)

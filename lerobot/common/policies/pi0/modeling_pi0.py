@@ -332,8 +332,9 @@ class PI0Policy(PreTrainedPolicy):
         # For backward pass
         loss_dict["loss"] = loss
         # For logging
-        loss_dict["l2_loss"] = loss.item()
-        return loss_dict
+        # loss_dict["l2_loss"] = loss.item() this cause compile tensor break
+        loss_dict["l2_loss"] = loss.detach()
+        return loss, loss_dict
 
     def prepare_images(self, batch):
         """Apply Pi0 preprocessing to the images, like resizing to 224x224 and padding to keep aspect ratio, and
@@ -357,8 +358,10 @@ class PI0Policy(PreTrainedPolicy):
             if self.config.resize_imgs_with_padding is not None:
                 img = resize_with_pad(img, *self.config.resize_imgs_with_padding, pad_value=0)
 
-            # Normalize from range [0,1] to [-1,1] as expacted by siglip
-            img = img * 2.0 - 1.0
+            # # Normalize from range [0,1] to [-1,1] as expacted by siglip
+            # Irving: I don't understand under what condition will the image coming in be in the range [0, 1]
+            # LeRobot's normalization in Normalize class already normalizes the image to [-1, 1]
+            # img = img * 2.0 - 1.0
 
             bsize = img.shape[0]
             device = img.device
@@ -382,7 +385,7 @@ class PI0Policy(PreTrainedPolicy):
         """Tokenize the text input"""
         device = batch[OBS_ROBOT].device
         tasks = batch["task"]
-
+        # print("tasks:", tasks)
         # PaliGemma prompt has to end with a new line
         tasks = [task if task.endswith("\n") else f"{task}\n" for task in tasks]
 
@@ -392,6 +395,7 @@ class PI0Policy(PreTrainedPolicy):
             padding_side="right",
             max_length=self.config.tokenizer_max_length,
             return_tensors="pt",
+            truncation=True, # Irving: add truncation to follow Allen
         )
         lang_tokens = tokenized_prompt["input_ids"].to(device=device)
         lang_masks = tokenized_prompt["attention_mask"].to(device=device, dtype=torch.bool)
@@ -521,7 +525,7 @@ class PI0FlowMatching(nn.Module):
             img_mask,
         ) in zip(images, img_masks, strict=False):
             img_emb = self.paligemma_with_expert.embed_image(img)
-            img_emb = img_emb.to(dtype=torch.bfloat16)
+            img_emb = img_emb.to(dtype=torch.bfloat16) # Irving: Don't change this
 
             # Normalize image embeddings
             img_emb_dim = img_emb.shape[-1]
@@ -563,9 +567,12 @@ class PI0FlowMatching(nn.Module):
         att_masks = []
 
         # Embed state
+        # print('state shape:', state.shape)
         state_emb = self.state_proj(state)
-        state_emb = state_emb.to(dtype=torch.bfloat16)
+        # print("state_emb shape:", state_emb.shape)
+        state_emb = state_emb.to(dtype=torch.bfloat16) # Irving: don't change this
         embs.append(state_emb[:, None, :])
+        # embs.append(state_emb)
         bsize = state_emb.shape[0]
         dtype = state_emb.dtype
         device = state_emb.device
@@ -583,9 +590,12 @@ class PI0FlowMatching(nn.Module):
         time_emb = time_emb.type(dtype=dtype)
 
         # Fuse timestep + action information using an MLP
+        # print('noisy_actions shape:', noisy_actions.shape)
         action_emb = self.action_in_proj(noisy_actions)
+        # print('action_emb shape:', action_emb.shape)
 
         time_emb = time_emb[:, None, :].expand_as(action_emb)
+        # print('time_emb shape:', time_emb.shape)
         action_time_emb = torch.cat([action_emb, time_emb], dim=2)
 
         action_time_emb = self.action_time_mlp_in(action_time_emb)
@@ -602,6 +612,9 @@ class PI0FlowMatching(nn.Module):
         # Set attention masks so that image, language and state inputs do not attend to action tokens
         att_masks += [1] + ([0] * (self.config.n_action_steps - 1))
 
+        # print("")
+        # print("embs 0 shape", embs[0].shape)
+        # print("embs 1 shape", embs[1].shape)
         embs = torch.cat(embs, dim=1)
         pad_masks = torch.cat(pad_masks, dim=1)
         att_masks = torch.tensor(att_masks, dtype=embs.dtype, device=embs.device)
