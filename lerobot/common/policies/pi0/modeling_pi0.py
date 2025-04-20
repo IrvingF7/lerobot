@@ -286,6 +286,8 @@ class PI0Policy(PreTrainedPolicy):
                 images, img_masks, lang_tokens, lang_masks, state, noise=noise
             )
 
+            actions = actions[:, : self.config.n_action_steps]
+
             # Unpad actions
             original_action_dim = self.config.action_feature.shape[0]
             actions = actions[:, :, :original_action_dim]
@@ -297,9 +299,8 @@ class PI0Policy(PreTrainedPolicy):
 
             # `self.model.forward` returns a (batch_size, chunk_size, action_dim) tensor, but the queue
             # effectively has shape (chunk_size, batch_size, *), hence the transpose.
-            actions_t = actions.transpose(0, 1)
 
-            self._action_queue.extend(actions_t[:self.config.n_action_steps])
+            self._action_queue.extend(actions.transpose(0, 1))
         return self._action_queue.popleft()
 
     def forward(self, batch: dict[str, Tensor], noise=None, time=None) -> tuple[Tensor, dict[str, Tensor]]:
