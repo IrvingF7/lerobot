@@ -295,12 +295,14 @@ class PI0Policy(PreTrainedPolicy):
             if self.config.adapt_to_pi_aloha:
                 actions = self._pi_aloha_encode_actions(actions)
 
-            # `self.model.forward` returns a (batch_size, n_action_steps, action_dim) tensor, but the queue
-            # effectively has shape (n_action_steps, batch_size, *), hence the transpose.
-            self._action_queue.extend(actions.transpose(0, 1))
+            # `self.model.forward` returns a (batch_size, chunk_size, action_dim) tensor, but the queue
+            # effectively has shape (chunk_size, batch_size, *), hence the transpose.
+            actions_t = actions.transpose(0, 1)
+
+            self._action_queue.extend(actions_t[:self.config.n_action_steps])
         return self._action_queue.popleft()
 
-    def forward(self, batch: dict[str, Tensor], noise=None, time=None) -> dict[str, Tensor]:
+    def forward(self, batch: dict[str, Tensor], noise=None, time=None) -> tuple[Tensor, dict[str, Tensor]]:
         """Do a full training forward pass to compute the loss"""
         if self.config.adapt_to_pi_aloha:
             batch[OBS_ROBOT] = self._pi_aloha_decode_state(batch[OBS_ROBOT])
@@ -313,7 +315,7 @@ class PI0Policy(PreTrainedPolicy):
         state = self.prepare_state(batch)
         lang_tokens, lang_masks = self.prepare_language(batch)
         actions = self.prepare_action(batch)
-        actions_is_pad = batch.get("actions_id_pad")
+        actions_is_pad = batch.get("actions_is_pad")
 
         loss_dict = {}
         losses = self.model.forward(images, img_masks, lang_tokens, lang_masks, state, actions, noise, time)
@@ -328,9 +330,8 @@ class PI0Policy(PreTrainedPolicy):
         losses = losses[:, :, : self.config.max_action_dim]
         loss_dict["losses_after_rm_padding"] = losses.clone()
 
-        loss = losses.mean()
         # For backward pass
-        loss_dict["loss"] = loss
+        loss = losses.mean()
         # For logging
         # loss_dict["l2_loss"] = loss.item() this cause compile tensor break
         loss_dict["l2_loss"] = loss.detach()
@@ -381,6 +382,7 @@ class PI0Policy(PreTrainedPolicy):
 
         return images, img_masks
 
+    @torch.compiler.disable(recursive=False)
     def prepare_language(self, batch) -> tuple[Tensor, Tensor]:
         """Tokenize the text input"""
         device = batch[OBS_ROBOT].device
@@ -610,7 +612,7 @@ class PI0FlowMatching(nn.Module):
         pad_masks.append(action_time_mask)
 
         # Set attention masks so that image, language and state inputs do not attend to action tokens
-        att_masks += [1] + ([0] * (self.config.n_action_steps - 1))
+        att_masks += [1] + ([0] * (self.config.chunk_size - 1))
 
         # print("")
         # print("embs 0 shape", embs[0].shape)
@@ -655,7 +657,7 @@ class PI0FlowMatching(nn.Module):
             use_cache=False,
             fill_kv_cache=False,
         )
-        suffix_out = suffix_out[:, -self.config.n_action_steps :]
+        suffix_out = suffix_out[:, -self.config.chunk_size :]
         # Original openpi code, upcast attention output
         suffix_out = suffix_out.to(dtype=torch.float32)
         v_t = self.action_out_proj(suffix_out)
@@ -669,7 +671,7 @@ class PI0FlowMatching(nn.Module):
         device = state.device
 
         if noise is None:
-            actions_shape = (bsize, self.config.n_action_steps, self.config.max_action_dim)
+            actions_shape = (bsize, self.config.chunk_size, self.config.max_action_dim)
             noise = self.sample_noise(actions_shape, device)
 
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(
@@ -740,7 +742,7 @@ class PI0FlowMatching(nn.Module):
             fill_kv_cache=False,
         )
         suffix_out = outputs_embeds[1]
-        suffix_out = suffix_out[:, -self.config.n_action_steps :]
+        suffix_out = suffix_out[:, -self.config.chunk_size :]
         suffix_out = suffix_out.to(dtype=torch.float32)
         v_t = self.action_out_proj(suffix_out)
         return v_t
