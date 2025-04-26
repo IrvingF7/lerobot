@@ -48,7 +48,7 @@ def find_cameras(raise_when_empty=True, mock=False) -> list[dict]:
     connected to the computer.
     """
     if mock:
-        import tests.mock_pyrealsense2 as rs
+        import tests.cameras.mock_pyrealsense2 as rs
     else:
         import pyrealsense2 as rs
 
@@ -100,7 +100,7 @@ def save_images_from_cameras(
         serial_numbers = [cam["serial_number"] for cam in camera_infos]
 
     if mock:
-        import tests.mock_cv2 as cv2
+        import tests.cameras.mock_cv2 as cv2
     else:
         import cv2
 
@@ -253,7 +253,7 @@ class IntelRealSenseCamera:
         self.logs = {}
 
         if self.mock:
-            import tests.mock_cv2 as cv2
+            import tests.cameras.mock_cv2 as cv2
         else:
             import cv2
 
@@ -287,7 +287,7 @@ class IntelRealSenseCamera:
             )
 
         if self.mock:
-            import tests.mock_pyrealsense2 as rs
+            import tests.cameras.mock_pyrealsense2 as rs
         else:
             import pyrealsense2 as rs
 
@@ -375,7 +375,7 @@ class IntelRealSenseCamera:
             )
 
         if self.mock:
-            import tests.mock_cv2 as cv2
+            import tests.cameras.mock_cv2 as cv2
         else:
             import cv2
 
@@ -512,13 +512,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--width",
-        type=str,
+        type=int,
         default=640,
         help="Set the width for all cameras. If not provided, use the default width of each camera.",
     )
     parser.add_argument(
         "--height",
-        type=str,
+        type=int,
         default=480,
         help="Set the height for all cameras. If not provided, use the default height of each camera.",
     )

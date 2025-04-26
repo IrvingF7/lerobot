@@ -80,7 +80,7 @@ def _find_cameras(
     possible_camera_ids: list[int | str], raise_when_empty=False, mock=False
 ) -> list[int | str]:
     if mock:
-        import tests.mock_cv2 as cv2
+        import tests.cameras.mock_cv2 as cv2
     else:
         import cv2
 
@@ -269,7 +269,7 @@ class OpenCVCamera:
         self.logs = {}
 
         if self.mock:
-            import tests.mock_cv2 as cv2
+            import tests.cameras.mock_cv2 as cv2
         else:
             import cv2
 
@@ -286,7 +286,7 @@ class OpenCVCamera:
             raise RobotDeviceAlreadyConnectedError(f"OpenCVCamera({self.camera_index}) is already connected.")
 
         if self.mock:
-            import tests.mock_cv2 as cv2
+            import tests.cameras.mock_cv2 as cv2
         else:
             import cv2
 
@@ -398,7 +398,7 @@ class OpenCVCamera:
         # so we convert the image color from BGR to RGB.
         if requested_color_mode == "rgb":
             if self.mock:
-                import tests.mock_cv2 as cv2
+                import tests.cameras.mock_cv2 as cv2
             else:
                 import cv2
 
@@ -492,13 +492,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--width",
-        type=str,
+        type=int,
         default=None,
         help="Set the width for all cameras. If not provided, use the default width of each camera.",
     )
     parser.add_argument(
         "--height",
-        type=str,
+        type=int,
         default=None,
         help="Set the height for all cameras. If not provided, use the default height of each camera.",
     )
