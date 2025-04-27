@@ -517,7 +517,9 @@ class PI0FAST(nn.Module):
                     )
 
                 # Normalize from range [0,1] to [-1,1] as expacted by siglip
-                img = img * 2.0 - 1.0
+                # NOTE: Irving: I don't understand under what condition will the image coming in be in the range [0, 1]
+                # LeRobot's normalization in Normalize class already normalizes the image to [-1, 1]
+                # img = img * 2.0 - 1.0
 
                 bsize = img.shape[0]
                 device = img.device
@@ -544,11 +546,13 @@ class PI0FAST(nn.Module):
         out = self.paligemma_tokenizer.vocab_size - 1 - self.fast_skip_tokens - tokens
         return out
 
+    @torch.compiler.disable(recursive=True) # NOTE: Added by Irving. Without this compile would have error, maybe have something to do with bf16
     def fast_tokenizer_wrapper(self, actions_norm):
         """
         A wrapper for self.fast_tokenizer that ensures batch processing,
         conversion to PyTorch tensors, and returns a dictionary without padding.
         """
+        actions_norm = actions_norm.to(dtype=torch.float32) # NOTE: Added by Irving. Without this would have numpy not compatible with bf16 error
         batch_tokens = self.fast_tokenizer(actions_norm)
         fast_out = self.processor.tokenizer.pad({"input_ids": batch_tokens}, return_tensors="pt")
 
@@ -574,7 +578,9 @@ class PI0FAST(nn.Module):
         state_text = []
         for txt, disc in zip(lang_text, discretized, strict=False):
             cleaned = txt.lower().strip().replace("_", " ")
-            state_str = " ".join(str(val.item()) for val in disc)
+            # state_str = " ".join(str(val.item()) for val in disc)
+            # NOTE: Changed by Irving. use detach to avoid compile graph break
+            state_str = " ".join(str(val.detach()) for val in disc)
             prefix_texts.append(f"Task: {cleaned}, State: {state_str};\n")
             state_text.append(f"State: {state_str};\n")
 
@@ -740,7 +746,8 @@ class PI0FAST(nn.Module):
         loss = token_loss.sum() / torch.clamp(loss_mask.sum(), min=1)
 
         # Return loss dictionary
-        loss_dict = {"ce_loss": loss.item(), "loss": loss}
+        # NOTE: Changed by Irving. use detach
+        loss_dict = {"ce_loss": loss.detach(), "loss": loss}
         return loss_dict
 
     def decode_actions_with_fast(

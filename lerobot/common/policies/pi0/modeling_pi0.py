@@ -361,7 +361,7 @@ class PI0Policy(PreTrainedPolicy):
                 img = resize_with_pad(img, *self.config.resize_imgs_with_padding, pad_value=0)
 
             # # Normalize from range [0,1] to [-1,1] as expacted by siglip
-            # Irving: I don't understand under what condition will the image coming in be in the range [0, 1]
+            # NOTE: Irving: I don't understand under what condition will the image coming in be in the range [0, 1]
             # LeRobot's normalization in Normalize class already normalizes the image to [-1, 1]
             # img = img * 2.0 - 1.0
 
